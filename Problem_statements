@@ -1,0 +1,213 @@
+Answers
+
+Problem Statement 1:- 
+step1: createion of Dockerfile
+
+# Use an official Node.js runtime as a parent image
+FROM node:14
+
+# Set the working directory
+WORKDIR /app
+
+# Copy package.json and package-lock.json
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy the rest of the application code
+COPY . .
+
+# Expose the port the app runs on
+EXPOSE 3000
+
+# Define the command to run the application
+CMD ["npm", "start"]
+
+Step 2:- Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wisecow-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: wisecow
+  template:
+    metadata:
+      labels:
+        app: wisecow
+    spec:
+      containers:
+      - name: wisecow
+        image: your-dockerhub-username/wisecow:latest
+        ports:
+        - containerPort: 3000
+apiVersion: v1
+kind: Service
+metadata:
+  name: wisecow-service
+spec:
+  selector:
+    app: wisecow
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3000
+  type: LoadBalancer
+
+Step 3: - CI/CD 
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+
+    - name: Log in to DockerHub
+      uses: docker/login-action@v1
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v2
+      with:
+        context: .
+        push: true
+        tags: your-dockerhub-username/wisecow:latest
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v1
+      with:
+        version: 'v1.18.0'
+
+    - name: Deploy to Kubernetes
+      env:
+        KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+      run: |
+        echo "${KUBE_CONFIG_DATA}" | base64 --decode > kubeconfig
+        kubectl --kubeconfig kubeconfig apply -f deployment.yaml
+        kubectl --kubeconfig kubeconfig apply -f service.yaml
+
+# issuer.yaml
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+
+# certificate.yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wisecow-cert
+spec:
+  secretName: wisecow-tls
+  duration: 90d
+  renewBefore: 30d
+  commonName: wisecow.local
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wisecow-ingress
+  annotations:
+    cert-manager.io/issuer: "selfsigned-issuer"
+spec:
+  tls:
+  - hosts:
+    - wisecow.local
+    secretName: wisecow-tls
+  rules:
+  - host: wisecow.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: wisecow-service
+            port:
+              number: 80
+
+Problem Statement 2:-
+
+import psutil
+import logging
+
+logging.basicConfig(filename='/var/log/system_health.log', level=logging.INFO, format='%(asctime)s %(message)s')
+
+CPU_THRESHOLD = 80  
+MEMORY_THRESHOLD = 80  
+DISK_THRESHOLD = 80 
+
+def check_cpu_usage():
+    cpu_usage = psutil.cpu_percent(interval=1)
+    if cpu_usage > CPU_THRESHOLD:
+        logging.warning(f"High CPU usage detected: {cpu_usage}%")
+    else:
+        logging.info(f"CPU usage is normal: {cpu_usage}%")
+    return cpu_usage
+
+def check_memory_usage():
+    memory_info = psutil.virtual_memory()
+    memory_usage = memory_info.percent
+    if memory_usage > MEMORY_THRESHOLD:
+        logging.warning(f"High Memory usage detected: {memory_usage}%")
+    else:
+        logging.info(f"Memory usage is normal: {memory_usage}%")
+    return memory_usage
+
+def check_disk_usage():
+    disk_info = psutil.disk_usage('/')
+    disk_usage = disk_info.percent
+    if disk_usage > DISK_THRESHOLD:
+        logging.warning(f"High Disk usage detected: {disk_usage}%")
+    else:
+        logging.info(f"Disk usage is normal: {disk_usage}%")
+    return disk_usage
+
+def check_running_processes():
+    processes = [p.info for p in psutil.process_iter(attrs=['pid', 'name', 'username'])]
+    logging.info(f"Number of running processes: {len(processes)}")
+    return processes
+
+def monitor_system_health():
+    cpu = check_cpu_usage()
+    memory = check_memory_usage()
+    disk = check_disk_usage()
+    processes = check_running_processes()
+    
+    print(f"CPU Usage: {cpu}%")
+    print(f"Memory Usage: {memory}%")
+    print(f"Disk Usage: {disk}%")
+    print(f"Number of running processes: {len(processes)}")
+
+if __name__ == "__main__":
+    monitor_system_health()
